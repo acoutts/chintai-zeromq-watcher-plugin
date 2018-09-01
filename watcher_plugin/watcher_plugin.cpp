@@ -33,11 +33,12 @@ namespace eosio {
       static const fc::microseconds max_deserialization_time;
 
       struct action_notif {
-         action_notif(const action& act, transaction_id_type tx_id, const variant& action_data)
-         : tx_id(tx_id), account(act.account), name(act.name), authorization(act.authorization),
+         action_notif(const action& act, transaction_id_type tx_id, const variant& action_data, const uint32_t block_num)
+         : tx_id(tx_id), block_num(block_num), account(act.account), name(act.name), authorization(act.authorization),
          action_data(action_data) {}
 
          transaction_id_type      tx_id;
+         uint32_t                 block_num;
          account_name             account;
          action_name              name;
          vector<permission_level> authorization;
@@ -93,7 +94,7 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-         //~ ilog("on_action_trace - tx id: ${u}", ("u",tx_id));
+         ilog("on_action_trace: ${u}", ("u",act));
          if( filter( act ) ) {
             action_queue.insert(std::make_pair(tx_id, act.act));
             //~ ilog("Added to action_queue: ${u}", ("u",act.act));
@@ -117,22 +118,23 @@ namespace eosio {
          }
       }
 
-      void build_message(message& msg, const transaction_id_type& tx_id) {
-         //~ ilog("inside build_message - transaction id: ${u}", ("u",tx_id));
+      void build_message(message& msg, const transaction_id_type& tx_id, uint32_t block_num) {
+         //~ ilog("inside build_message - block_num: ${u}", ("u",block_num));
          auto range = action_queue.equal_range(tx_id);
          for( auto& it = range.first; it != range.second; it++) {
             //~ ilog("inside build_message for loop on iterator for action_queue range");
             //~ ilog("iterator it->first: ${u}", ("u",it->first));
             //~ ilog("iterator it->second: ${u}", ("u",it->second));
             auto act_data = deserialize_action_data(it->second);
-            action_notif notif( it->second, tx_id, std::forward<fc::variant>(act_data) );
-
+            action_notif notif( it->second, tx_id, std::forward<fc::variant>(act_data), block_num );
+            //~ ilog("inside for loop for each action - action_notif: ${u}", ("u",notif));
             msg.actions.push_back(notif);
          }
       }
 
       void send_message(const message& msg) {
-         dlog("Sending: ${a}", ("a", fc::json::to_pretty_string(msg)));
+        //~ ilog("send_message msg: ${u}",("u",msg));
+         //~ dlog("Sending: ${a}", ("a", fc::json::to_pretty_string(msg)));
          try{
             httpc.post(receiver_url, msg, fc::time_point::now() + http_timeout );
          }
@@ -141,11 +143,12 @@ namespace eosio {
 
       void on_accepted_block(const block_state_ptr& block_state) {
          //~ ilog("on_accepted_block | block_state->block: ${u}", ("u",block_state->block));
-         //ilog("block_num: ${u}", ("u",block_state->block->block_num));
          fc::time_point btime = block_state->block->timestamp;
          if( age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit)) ) {
             message msg;
             transaction_id_type tx_id;
+            uint32_t block_num = block_state->block->block_num();
+            //~ ilog("Block_num: ${u}", ("u",block_num));
 
             //~ Process transactions from `block_state->block->transactions` because it includes all transactions including deferred ones
             //~ ilog("Looping over all transaction objects in block_state->block->transactions");
@@ -163,7 +166,7 @@ namespace eosio {
 
               //~ ilog("action_queue.size: ${u}", ("u",action_queue.size()));
               if( action_queue.count(tx_id) ) {
-                 build_message(msg, tx_id);
+                 build_message(msg, tx_id, block_num);
               }
             }
 
@@ -257,6 +260,6 @@ namespace eosio {
 
 }
 
-FC_REFLECT(eosio::watcher_plugin_impl::action_notif, (tx_id)(account)(name)(authorization)
+FC_REFLECT(eosio::watcher_plugin_impl::action_notif, (tx_id)(block_num)(account)(name)(authorization)
    (action_data))
 FC_REFLECT(eosio::watcher_plugin_impl::message, (actions))
