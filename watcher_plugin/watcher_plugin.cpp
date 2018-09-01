@@ -94,7 +94,7 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-         ilog("on_action_trace: ${u}", ("u",act));
+         //~ ilog("on_action_trace: ${u}", ("u",act));
          if( filter( act ) ) {
             action_queue.insert(std::make_pair(tx_id, act.act));
             //~ ilog("Added to action_queue: ${u}", ("u",act.act));
