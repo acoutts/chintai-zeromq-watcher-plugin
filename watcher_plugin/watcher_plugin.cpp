@@ -74,7 +74,6 @@ namespace eosio {
       fc::optional<boost::signals2::scoped_connection> accepted_block_conn;
       fc::optional<boost::signals2::scoped_connection> applied_tx_conn;
       std::set<watcher_plugin_impl::filter_entry>      filter_on;
-      fc::url                                          receiver_url;
       int64_t                                          age_limit = default_age_limit;
       action_queue_t                                   action_queue;
 
@@ -86,9 +85,10 @@ namespace eosio {
 
       bool filter( const action_trace& act ) {
          if( filter_on.find({ act.receipt.receiver, act.act.name }) != filter_on.end() )
-         return true;
+          return true;
          else if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() )
-         return true;
+          return true;
+        //~ TODO: include delegatebw and undelegatebw actions from the `filter_on` account
          return false;
       }
 
@@ -144,7 +144,7 @@ namespace eosio {
       }
 
       void send_zmq_message(const  message& msg) {
-        ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
+        //~ ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
         string zao_json = fc::json::to_string(msg);
 
         int32_t msgtype = 0;
@@ -210,40 +210,21 @@ namespace eosio {
 
    void watcher_plugin::set_program_options(options_description&, options_description& cfg) {
       cfg.add_options()
-      ("watch", bpo::value<vector<string>>()->composing(),
-      "Track actions which match account:action. In case action is not specified, "
-      "all actions of specified account are tracked.")
-      ("watch-receiver-url", bpo::value<string>(),
-      "URL where to send actions being tracked")
-      ("watch-age-limit",
-      bpo::value<int64_t>()->default_value(watcher_plugin_impl::default_age_limit),
-      "Age limit in seconds for blocks to send notifications about."
-      "No age limit if set to negative.")
-      (SENDER_BIND, bpo::value<string>()->default_value(SENDER_BIND_DEFAULT),
-       "ZMQ Sender Socket binding");
-
+      ("watch", bpo::value<vector<string>>()->composing(), "Track actions which match account:action. In case action is not specified, all actions of specified account are tracked.")
+      ("watch-age-limit", bpo::value<int64_t>()->default_value(watcher_plugin_impl::default_age_limit), "Age limit in seconds for blocks to send notifications about. No age limit if set to negative.")
+      (SENDER_BIND, bpo::value<string>()->default_value(SENDER_BIND_DEFAULT), "ZMQ Sender Socket binding");
    }
 
    void watcher_plugin::plugin_initialize(const variables_map& options) {
       try {
-         EOS_ASSERT(options.count("watch-receiver-url") == 1, fc::invalid_arg_exception,
-         "watch_plugin requires one watch-receiver-url to be specified!");
-
-         string url_str = options.at("watch-receiver-url").as<string>();
-         my->receiver_url = fc::url(url_str);
-
-
-
          string bind_str = options.at(SENDER_BIND).as<string>();
          if (bind_str.empty())
            {
-             wlog("zmq-sender-bind not specified => eosio::zmq_plugin disabled.");
+             wlog("zmq-sender-bind not specified => eosio::watcher_plugin disabled.");
              return;
            }
          ilog("Binding to ${u}", ("u", bind_str));
          my->sender_socket.bind(bind_str);
-
-
 
          if (options.count("watch")) {
             auto fo = options.at("watch").as<vector<string>>();
