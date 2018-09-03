@@ -1,28 +1,9 @@
-# EOSIO Watcher Plugin by EOS Authority
-The watcher plugin is useful to watch for specific actions on the chain and then send them to an HTTP url. 
-The HTTP POST is called as soon as the action is seen on the chain!
-
-
-# Watcher plugin features
-## Filter and get notifications for actions on any account
-You can either get notifications for all actions on a specific contract account, or any specific actions. You get notifications in a form of http POST call to the url you specify. 
-
-## Age limit for actions
-Usually you don't want to receive notifications for actions which happened months ago, just because your nodeos is resyncing. To prevent this you can specify age limit for blocks, which are filtered for actions you want to receive. This is by default set to 1 minute, but is configurable.
-
-## Flexible configuration
-Features just mentioned are configurable through options to nodeos (built with watcher_plugin) or in your config.ini. Use `nodeos --help` to see help for options.
-
-## Asynchronous http calls
-Notifications are sent asynchronously, which means it does not interfere with normal operation of nodeos, even in case of unreliable http connection to the notification receiver.
-
-## Retry on failed calls
-To make sure no action is missed, even when a connection to the receiver is lost, on failed first attempt to send, plugin retries once more before giving up.
-
-# Installation instructions
+# EOSIO Watcher Plugin + ZeroMQ
+This is a modified version of the EOSIO Watcher Plugin (https://github.com/eosauthority/eosio-watcher-plugin) with the ZeroMQ Plugin (https://github.com/cc32d9/eos_zmq_plugin). It uses the approach in the watcher plugin where only transactions that make it into an accepted block are processed, but uses ZeroMQ to avoid http endpoint saturation when replaying the blockchain. Additionally since ZeroMQ push is a blocking operation, it is guaranteed that events (blocks) are processed in order at the work receiver endpoint performing the pull.
 
 ## Requirements
-- Works on any EOSIO node that runs v1.1.0 and up.
+- You'll need to install `libzmq` for your system as well as `pkg-config`. Please see installation instructions here: http://zeromq.org/intro:get-the-software
+- Additionally you'll need to install the C++ bindings for your system: https://github.com/zeromq/cppzmq
 
 ## Building the plugin [Install on your nodeos server]
 1. Copy watcher_plugin folder to `<eosio-source-dir>/plugins/` You should now have `<eosio-source-dir>/plugins/watcher_plugin`
@@ -41,29 +22,18 @@ To make sure no action is missed, even when a connection to the receiver is lost
 
 Enable this plugin using `--plugin` option to nodeos or in your config.ini. Use `nodeos --help` to see options used by this plugin.
 
-## Edit your nodeos config.ini (probably easier)
+# Configuration
+Add the following to `config.ini` to enable the plugin:
 ```
-#Enable plugin
+#Enable watcher plugin
 plugin = eosio::watcher_plugin
-#Set account:action so eosauthority:spaceinvader or just eosauthority: for all actions on eosauthority
-watch = eosauthority:
-#watch multiple if required 
-watch = b1:
-#watch multiple if required 
-watch = eosabc:forum
-#http endpoint for each action seen on the chain. JSON array if you there are multiple actions in one block.
-#see sample json example. All "watch" above will be sent to this URL and the URL can handle processing as required
-watch-receiver-url = http://127.0.0.1:8082/blockchain_action
-#Age limit in seconds for blocks to send notifications. No age limit if set to negative.
-#Used to prevent old actions from trigger HTTP request while on replay (seconds)
-watch-age-limit = 5
- ```
-## Check if the plugin has loaded
-- You should see an entry for watcher_plugin in the logs when you restart nodeos. 
-- Your HTTP endpoint should receive POST requests as in [our sample JSON](sample-post.json)
-- Thats it, you should be all set to get realtime actions on the chain.
 
-# Feedback & development
-- This plugin is used on production with space invaders. https://eosauthority.com/space/
-- You also use this plugin to setup realtime alerts similar to https://eosauthority.com/alerts 
-- Any suggestions and pull requests are welcome :)
+#Set account:action so eosauthority:spaceinvader or just eosauthority: for all actions on eosauthority
+watch=chintaitest1:
+
+#Age limit in seconds for blocks to send notifications. No age limit if set to negative. Used to prevent old actions from trigger HTTP request while on replay (seconds)
+watch-age-limit = -1
+
+#ZMQ sender socket binding
+zmq-sender-bind = tcp://127.0.0.1:3001
+```
