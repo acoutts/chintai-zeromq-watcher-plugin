@@ -84,16 +84,24 @@ namespace eosio {
       {}
 
       bool filter( const action_trace& act ) {
-         if( filter_on.find({ act.receipt.receiver, act.act.name }) != filter_on.end() )
-          return true;
-         else if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() )
-          return true;
-        //~ TODO: include delegatebw and undelegatebw actions from the `filter_on` account
-         return false;
+        if ( (act.act.name == "delegatebw") || (act.act.name == "undelegatebw") ) {
+          if ( filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ) {
+            return true;
+          } else {
+            return false;
+          }
+        } else if ( act.act.name == "transfer" ) {
+          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+            return true;
+          } else {
+            return false;
+          }
+        } else {
+          return false;
+        }
       }
 
       fc::variant deserialize_action_data(action act) {
-         //~ ilog("deserialize_action_data - action:", ("u",act));  //~ happens on every block
          auto& chain = chain_plug->chain();
          auto serializer = chain.get_abi_serializer(act.account, max_deserialization_time);
          FC_ASSERT(serializer.valid() &&
@@ -105,16 +113,16 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-         //~ ilog("on_action_trace: ${u}", ("u",act));
-         if( filter( act ) ) {
-            action_queue.insert(std::make_pair(tx_id, act.act));
-            //~ ilog("Added to action_queue: ${u}", ("u",act.act));
-         }
+        //~ ilog("on_action_trace: ${u}", ("u",act));
+        if( filter( act ) ) {
+          action_queue.insert(std::make_pair(tx_id, act.act));
+          //~ ilog("Added to action_queue: ${u}", ("u",act.act));
+        }
 
-         for( const auto& iline : act.inline_traces ) {
-            //~ ilog("Processing inline_trace: ${u}", ("u",iline));
-            on_action_trace( iline, tx_id );
-         }
+        for( const auto& iline : act.inline_traces ) {
+          //~ ilog("Processing inline_trace: ${u}", ("u",iline));
+          on_action_trace( iline, tx_id );
+        }
       }
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
