@@ -96,6 +96,12 @@ namespace eosio {
           } else {
             return false;
           }
+        } else if ( act.act.name == "extensions" ) {
+          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+            return true;
+          } else {
+            return false;
+          }
         } else {
           return false;
         }
