@@ -16,7 +16,17 @@ This is a modified version of the EOSIO Watcher Plugin (https://github.com/eosau
   ```
   target_link_libraries( nodeos PRIVATE -Wl,${whole_archive_flag} watcher_plugin -Wl,${no_whole_archive_flag})
   ```
-4. Build and install nodeos as usual. You could even just `cd <eosio-source-dir>/build` and then `sudo make install`
+
+4. Install dependencies:
+### macOS
+  ```
+  brew install pkg-config
+  brew link pkg-config
+  brew install zmq
+  ```
+  Download the C++ bindings for ZeroMQ by cloning this repository: `https://github.com/zeromq/cppzmq`, and copy `zmq.hpp` to `/usr/local/include` putting it next to `zmq.h`
+  
+4. Build and install nodeos with `eosio_build.sh` and `eosio_install.sh`. You could even just `cd <eosio-source-dir>/build` and then `sudo make install`
 
 # How to setup on your nodeos
 
