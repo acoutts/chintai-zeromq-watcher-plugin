@@ -212,6 +212,8 @@ namespace eosio {
             //~ ilog("action_queue.size: ${u}", ("u",action_queue.size()));
             if( action_queue.count(tx_id) ) {
               build_message(msg, tx_id);
+              auto itr = action_queue.find(tx_id);
+              action_queue.erase(itr);
             }
           }
 
@@ -223,7 +225,7 @@ namespace eosio {
           send_zmq_message(msg);
         }
         // TODO: Leave unsent actions until they are expired or are included in future blocks?
-        action_queue.clear();
+        // action_queue.clear();
       }
     };
 
