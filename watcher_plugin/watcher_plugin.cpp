@@ -31,7 +31,7 @@ namespace eosio {
 
    class watcher_plugin_impl {
    public:
-      typedef std::unordered_multimap<transaction_id_type, action> action_queue_t;
+      typedef std::unordered_map<transaction_id_type, std::vector< action > > action_queue_t;
 
       static const int64_t          default_age_limit = 60;
       static const fc::microseconds http_timeout;
@@ -133,7 +133,14 @@ namespace eosio {
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
         //~ ilog("on_action_trace: ${u}", ("u",act));
         if( filter( act ) ) {
-          action_queue.insert(std::make_pair(tx_id, act.act));
+          if(action_queue.find(tx_id) == action_queue.end()) {
+            std::vector< action > tmpactions;
+            tmpactions.push_back(act.act);
+            action_queue.insert(std::make_pair(tx_id, tmpactions));
+          }else{
+            action_queue.at(tx_id).push_back(act.act);
+          }
+          //action_queue.insert(std::make_pair(tx_id, act.act));
           //~ ilog("Added to action_queue: ${u}", ("u",act.act));
         }
 
@@ -157,13 +164,14 @@ namespace eosio {
 
       void build_message( message& msg, const transaction_id_type& tx_id) {
          //~ ilog("inside build_message - block_num: ${u}", ("u",block_num));
-         auto range = action_queue.equal_range(tx_id);
-         for( auto& it = range.first; it != range.second; it++) {
+         auto range = action_queue.find(tx_id);
+         if(range == action_queue.end()) return;
+         for(int i = 0; i < range->second.size(); ++i ) {
             //~ ilog("inside build_message for loop on iterator for action_queue range");
             //~ ilog("iterator it->first: ${u}", ("u",it->first));
             //~ ilog("iterator it->second: ${u}", ("u",it->second));
-            auto act_data = deserialize_action_data(it->second);
-            action_notif notif( it->second, tx_id, std::forward<fc::variant>(act_data) );
+            auto act_data = deserialize_action_data(range->second.at(i));
+            action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
             //~ ilog("inside for loop for each action - action_notif: ${u}", ("u",notif));
             msg.actions.push_back(notif);
          }
