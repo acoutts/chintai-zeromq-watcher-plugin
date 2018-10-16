@@ -83,33 +83,79 @@ namespace eosio {
         sender_socket(context, ZMQ_PUSH)
       {}
 
+      // bool filter( const action_trace& act ) {
+      //   if ( (act.act.name == "delegatebw") || (act.act.name == "undelegatebw") ) {
+      //     if ( filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "freeze" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "prepare" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "activate" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "transfer" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "extensions" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else if ( act.act.name == "cancelorder" ) {
+      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+      //       return true;
+      //     } else {
+      //       return false;
+      //     }
+      //   } else {
+      //     return false;
+      //   }
+      // }
+
       bool filter( const action_trace& act ) {
-        if ( (act.act.name == "delegatebw") || (act.act.name == "undelegatebw") ) {
-          if ( filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ) {
-            return true;
-          } else {
-            return false;
-          }
-        } else if ( act.act.name == "activate" ) {
-          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-            return true;
-          } else {
-            return false;
-          }
-        } else if ( act.act.name == "transfer" ) {
-          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-            return true;
-          } else {
-            return false;
-          }
-        } else if ( act.act.name == "extensions" ) {
-          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-            return true;
-          } else {
-            return false;
-          }
-        } else if ( act.act.name == "cancelorder" ) {
-          if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
+        if ( // Actions Chintai emits
+            act.act.name == "extensions" ||
+            act.act.name == "undelegatebw" ||
+            act.act.name == "delegatebw" ||
+            act.act.name == "reminactive" ||
+            act.act.name == "chinrefund" ||
+            act.act.name == "delaycancel" ||
+            // Actions sent to Chintai
+            act.act.name == "prepare" ||
+            act.act.name == "activate" ||
+            act.act.name == "uninit" ||
+            act.act.name == "init" ||
+            act.act.name == "freeze" ||
+            act.act.name == "cancelorder" ||
+            act.act.name == "cancelorderc" ||
+            // Actions that can be emitted or received
+            act.act.name == "transfer"
+            )
+        {
+          if (
+            filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ||
+            filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end()
+          ) {
+            // ilog("Filtered true on: ${u}", ("u", act.act.name));
             return true;
           } else {
             return false;
@@ -131,7 +177,7 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-        //~ ilog("on_action_trace: ${u}", ("u",act));
+        // ilog("on_action_trace: ${u}", ("u",act));
         if( filter( act ) ) {
           if(action_queue.find(tx_id) == action_queue.end()) {
             std::vector< action > tmpactions;
@@ -141,20 +187,20 @@ namespace eosio {
             action_queue.at(tx_id).push_back(act.act);
           }
           //action_queue.insert(std::make_pair(tx_id, act.act));
-          //~ ilog("Added to action_queue: ${u}", ("u",act.act));
+          // ilog("Added to action_queue: ${u}", ("u",act.act));
         }
 
         for( const auto& iline : act.inline_traces ) {
-          //~ ilog("Processing inline_trace: ${u}", ("u",iline));
+          // ilog("Processing inline_trace: ${u}", ("u",iline));
           on_action_trace( iline, tx_id );
         }
       }
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
-         //~ ilog("on_applied_tx - trace object: ${u}", ("u",trace));
+         // ilog("on_applied_tx - trace object: ${u}", ("u",trace));
          auto id = trace->id;
-         //~ ilog("trace->id: ${u}",("u",trace->id));
-         //~ ilog("action_queue.count(id): ${u}",("u",action_queue.count(id)));
+         // ilog("trace->id: ${u}",("u",trace->id));
+         // ilog("action_queue.count(id): ${u}",("u",action_queue.count(id)));
          if( !action_queue.count(id) ) {
             for( auto& at : trace->action_traces ) {
                on_action_trace(at, id);
@@ -163,22 +209,30 @@ namespace eosio {
       }
 
       void build_message( message& msg, const transaction_id_type& tx_id) {
-         //~ ilog("inside build_message - block_num: ${u}", ("u",block_num));
+         // ilog("inside build_message - tx_id: ${u}", ("u",tx_id));
          auto range = action_queue.find(tx_id);
          if(range == action_queue.end()) return;
          for(int i = 0; i < range->second.size(); ++i ) {
             //~ ilog("inside build_message for loop on iterator for action_queue range");
             //~ ilog("iterator it->first: ${u}", ("u",it->first));
             //~ ilog("iterator it->second: ${u}", ("u",it->second));
-            auto act_data = deserialize_action_data(range->second.at(i));
-            action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
-            //~ ilog("inside for loop for each action - action_notif: ${u}", ("u",notif));
-            msg.actions.push_back(notif);
+            if(!range->second.at(i).data.empty()) {
+              auto act_data = deserialize_action_data(range->second.at(i));
+              action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
+              msg.actions.push_back(notif);
+              if(range->second.at(i).name == "transfer" && filter_on.find({ range->second.at(i).authorization[0].actor, 0 }) != filter_on.end() ) {
+                i += 2; // lol mad hax
+              }
+            } else {
+              variant dummy;
+              action_notif notif( range->second.at(i), tx_id, dummy);
+              msg.actions.push_back(notif);
+            }
          }
       }
 
       void send_zmq_message(const  message& msg) {
-        //~ ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
+        // ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
         string zao_json = fc::json::to_string(msg);
 
         int32_t msgtype = 0;
@@ -195,7 +249,7 @@ namespace eosio {
       }
 
       void on_accepted_block(const block_state_ptr& block_state) {
-        //~ ilog("on_accepted_block | block_state->block: ${u}", ("u",block_state->block));
+        // ilog("on_accepted_block | block_state->block: ${u}", ("u",block_state->block));
         fc::time_point btime = block_state->block->timestamp;
         if( age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit)) ) {
           message msg;
@@ -208,12 +262,14 @@ namespace eosio {
           for( const auto& trx : block_state->block->transactions ) {
             if( trx.trx.contains<transaction_id_type>() ) {
               //~ For deferred transactions the transaction id is easily accessible
-              //~ ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<transaction_id_type>()));
+              // ilog("Running: trx.trx.get<transaction_id_type>()");
+              // ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<transaction_id_type>()));
               tx_id = trx.trx.get<transaction_id_type>();
             }
             else {
               //~ For non-deferred transactions we have to access the txid from within the packed transaction. The `trx` structure and `id()` getter method are defined in `transaction.hpp`
-              //~ ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<packed_transaction>().id()));
+              // ilog("Running: trx.trx.get<packed_transaction>().id()");
+              // ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<packed_transaction>().id()));
               tx_id = trx.trx.get<packed_transaction>().id();
             }
 
