@@ -132,14 +132,14 @@ namespace eosio {
       // }
 
       bool filter( const action_trace& act ) {
-        if ( // Actions Chintai emits
+        if (
             act.act.name == "extensions" ||
             act.act.name == "undelegatebw" ||
             act.act.name == "delegatebw" ||
             act.act.name == "reminactive" ||
             act.act.name == "chinrefund" ||
             act.act.name == "delaycancel" ||
-            // Actions sent to Chintai
+            act.act.name == "chinundel" ||
             act.act.name == "prepare" ||
             act.act.name == "activate" ||
             act.act.name == "uninit" ||
@@ -147,8 +147,11 @@ namespace eosio {
             act.act.name == "freeze" ||
             act.act.name == "cancelorder" ||
             act.act.name == "cancelorderc" ||
-            // Actions that can be emitted or received
-            act.act.name == "transfer"
+            act.act.name == "onerror" ||
+            act.act.name == "processpool" ||
+            act.act.name == "transfer" ||
+            act.act.name == "sortdeftrx" ||
+            act.act.name == "cdeferred"
             )
         {
           if (
@@ -213,10 +216,9 @@ namespace eosio {
          auto range = action_queue.find(tx_id);
          if(range == action_queue.end()) return;
          for(int i = 0; i < range->second.size(); ++i ) {
-            //~ ilog("inside build_message for loop on iterator for action_queue range");
-            //~ ilog("iterator it->first: ${u}", ("u",it->first));
-            //~ ilog("iterator it->second: ${u}", ("u",it->second));
-            if(!range->second.at(i).data.empty()) {
+            // ilog("inside build_message for loop on iterator for action_queue range");
+            // ilog("iterator range->second.at(i): ${u}", ("u",range->second.at(i).name));
+            if(!range->second.at(i).data.empty() && range->second.at(i).name != N(processpool)) {
               auto act_data = deserialize_action_data(range->second.at(i));
               action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
               msg.actions.push_back(notif);
