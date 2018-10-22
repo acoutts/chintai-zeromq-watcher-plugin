@@ -151,7 +151,8 @@ namespace eosio {
             act.act.name == "processpool" ||
             act.act.name == "transfer" ||
             act.act.name == "sortdeftrx" ||
-            act.act.name == "cdeferred"
+            act.act.name == "cdeferred" ||
+            act.act.name == "liveundel"
             )
         {
           if (
