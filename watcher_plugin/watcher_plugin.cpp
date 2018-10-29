@@ -83,55 +83,7 @@ namespace eosio {
         sender_socket(context, ZMQ_PUSH)
       {}
 
-      // bool filter( const action_trace& act ) {
-      //   if ( (act.act.name == "delegatebw") || (act.act.name == "undelegatebw") ) {
-      //     if ( filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "freeze" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "prepare" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "activate" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "transfer" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "extensions" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else if ( act.act.name == "cancelorder" ) {
-      //     if ( filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end() ) {
-      //       return true;
-      //     } else {
-      //       return false;
-      //     }
-      //   } else {
-      //     return false;
-      //   }
-      // }
-
-      bool filter( const action_trace& act ) {
+      bool filter( const action_trace& act ) {  // Filter on any actions from Chintai and any actions going to Chintai
         if (
             act.act.name == "extensions" ||
             act.act.name == "undelegatebw" ||
@@ -181,35 +133,30 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-        // ilog("on_action_trace: ${u}", ("u",act));
-        if( filter( act ) ) {
-          if(action_queue.find(tx_id) == action_queue.end()) {
-            std::vector< action > tmpactions;
-            tmpactions.push_back(act.act);
-            action_queue.insert(std::make_pair(tx_id, tmpactions));
-          }else{
-            action_queue.at(tx_id).push_back(act.act);
-          }
-          //action_queue.insert(std::make_pair(tx_id, act.act));
-          // ilog("Added to action_queue: ${u}", ("u",act.act));
+        if(filter(act)) {
+          action_queue[tx_id].push_back(act.act);
         }
 
-        for( const auto& iline : act.inline_traces ) {
-          // ilog("Processing inline_trace: ${u}", ("u",iline));
+        for(const auto& iline : act.inline_traces) {
           on_action_trace( iline, tx_id );
         }
       }
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
-         // ilog("on_applied_tx - trace object: ${u}", ("u",trace));
-         auto id = trace->id;
-         // ilog("trace->id: ${u}",("u",trace->id));
-         // ilog("action_queue.count(id): ${u}",("u",action_queue.count(id)));
-         if( !action_queue.count(id) ) {
-            for( auto& at : trace->action_traces ) {
-               on_action_trace(at, id);
-            }
-         }
+        if (trace->receipt) {
+          transaction_id_type id;
+
+          if (trace->failed_dtrx_trace) {
+            id = trace->failed_dtrx_trace->id;
+          }
+          else {
+            id = trace->id;
+          }
+
+          for( auto& at : trace->action_traces ) {
+             on_action_trace(at, id);
+          }
+        }
       }
 
       void build_message( message& msg, const transaction_id_type& tx_id) {
@@ -237,16 +184,8 @@ namespace eosio {
       void send_zmq_message(const  message& msg) {
         // ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
         string zao_json = fc::json::to_string(msg);
-
-        int32_t msgtype = 0;
-        int32_t msgopts = 0;
-
-        zmq::message_t message(zao_json.length()+sizeof(msgtype)+sizeof(msgopts));
+        zmq::message_t message(zao_json.length());
         unsigned char* ptr = (unsigned char*) message.data();
-        memcpy(ptr, &msgtype, sizeof(msgtype));
-        ptr += sizeof(msgtype);
-        memcpy(ptr, &msgopts, sizeof(msgopts));
-        ptr += sizeof(msgopts);
         memcpy(ptr, zao_json.c_str(), zao_json.length());
         sender_socket.send(message);
       }
@@ -276,11 +215,12 @@ namespace eosio {
               tx_id = trx.trx.get<packed_transaction>().id();
             }
 
-            //~ ilog("action_queue.size: ${u}", ("u",action_queue.size()));
             if( action_queue.count(tx_id) ) {
-              build_message(msg, tx_id);
-              auto itr = action_queue.find(tx_id);
-              action_queue.erase(itr);
+              if( trx.status == transaction_receipt_header::executed ) {
+                build_message(msg, tx_id);
+              } else {
+                ilog("Transaction execution failed for ID: ${id}", ("id", tx_id));
+              }
             }
           }
 
@@ -291,8 +231,9 @@ namespace eosio {
           msg.timestamp = btime;
           send_zmq_message(msg);
         }
-        // TODO: Leave unsent actions until they are expired or are included in future blocks?
-        // action_queue.clear();
+
+        // Clear the queue. Any actions that were not included since the last block will be detected again the next time on_applied_tx is called for it
+        action_queue.clear();
       }
     };
 
