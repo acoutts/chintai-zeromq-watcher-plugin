@@ -138,23 +138,27 @@ namespace eosio {
         }
 
         for(const auto& iline : act.inline_traces) {
-          on_action_trace( iline, tx_id );
+          on_action_trace(iline, tx_id);
         }
       }
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
         if (trace->receipt) {
-          transaction_id_type id;
-
           if (trace->failed_dtrx_trace) {
-            id = trace->failed_dtrx_trace->id;
+            if (action_queue.count(trace->failed_dtrx_trace->id)) {
+              // If we later find that a transaction was failed before it's included in a block, remove its actions from the action queue
+              action_queue.erase(action_queue.find(trace->failed_dtrx_trace->id));
+              return;
+            }
           }
-          else {
-            id = trace->id;
+
+          if (action_queue.count(trace->id)) {
+            ilog("WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
+            action_queue.erase(action_queue.find(trace->id));
           }
 
           for( auto& at : trace->action_traces ) {
-             on_action_trace(at, id);
+             on_action_trace(at, trace->id);
           }
         }
       }
@@ -170,9 +174,9 @@ namespace eosio {
               auto act_data = deserialize_action_data(range->second.at(i));
               action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
               msg.actions.push_back(notif);
-              if(range->second.at(i).name == "transfer" && filter_on.find({ range->second.at(i).authorization[0].actor, 0 }) != filter_on.end() ) {
-                i += 2; // lol mad hax
-              }
+              // if(range->second.at(i).name == "transfer" && filter_on.find({ range->second.at(i).authorization[0].actor, 0 }) != filter_on.end() ) {
+              //   i += 2;
+              // }
             } else {
               variant dummy;
               action_notif notif( range->second.at(i), tx_id, dummy);
@@ -216,11 +220,7 @@ namespace eosio {
             }
 
             if( action_queue.count(tx_id) ) {
-              if( trx.status == transaction_receipt_header::executed ) {
-                build_message(msg, tx_id);
-              } else {
-                ilog("Transaction execution failed for ID: ${id}", ("id", tx_id));
-              }
+              build_message(msg, tx_id);
             }
           }
 
