@@ -21,6 +21,8 @@
 namespace {
   const char* SENDER_BIND = "zmq-sender-bind";
   const char* SENDER_BIND_DEFAULT = "tcp://127.0.0.1:5556";
+  const uint32_t MSG_TYPE_BLOCK = 0;
+  const uint32_t MSG_TYPE_IRREVERSIBLE_BLOCK = 1;
 }
 
 namespace eosio {
@@ -38,21 +40,33 @@ namespace eosio {
       static const fc::microseconds max_deserialization_time;
 
       struct action_notif {
-         action_notif(const action& act, transaction_id_type tx_id, const variant& action_data)
-         : tx_id(tx_id), account(act.account), name(act.name), authorization(act.authorization),
+         action_notif(const action& act, const variant& action_data)
+         : account(act.account), name(act.name), authorization(act.authorization),
          action_data(action_data) {}
 
-         transaction_id_type      tx_id;
          account_name             account;
          action_name              name;
          vector<permission_level> authorization;
          fc::variant              action_data;
       };
 
+      struct transaction {
+        transaction_id_type tx_id;
+        std::vector<action_notif> actions;
+      };
+
+      struct irreversible_block_message {
+        uint32_t block_num;
+        fc::time_point timestamp;
+        uint32_t msg_type;
+        std::vector<transaction_id_type> transactions;
+      };
+
       struct  message {
         uint32_t block_num;
         fc::time_point timestamp;
-        std::vector<action_notif> actions;
+        uint32_t msg_type;
+        std::vector<transaction> transactions;
       };
 
       struct filter_entry {
@@ -73,6 +87,7 @@ namespace eosio {
       chain_plugin* chain_plug = nullptr;
       fc::optional<boost::signals2::scoped_connection> accepted_block_conn;
       fc::optional<boost::signals2::scoped_connection> applied_tx_conn;
+      fc::optional<boost::signals2::scoped_connection> irreversible_block_conn;
       std::set<watcher_plugin_impl::filter_entry>      filter_on;
       int64_t                                          age_limit = default_age_limit;
       action_queue_t                                   action_queue;
@@ -163,29 +178,31 @@ namespace eosio {
         }
       }
 
-      void build_message( message& msg, const transaction_id_type& tx_id) {
+      void build_message(const transaction_id_type& tx_id, transaction& tx) {
          // ilog("inside build_message - tx_id: ${u}", ("u",tx_id));
          auto range = action_queue.find(tx_id);
          if(range == action_queue.end()) return;
+
          for(int i = 0; i < range->second.size(); ++i ) {
             // ilog("inside build_message for loop on iterator for action_queue range");
             // ilog("iterator range->second.at(i): ${u}", ("u",range->second.at(i).name));
             if(!range->second.at(i).data.empty() && range->second.at(i).name != N(processpool)) {
               auto act_data = deserialize_action_data(range->second.at(i));
-              action_notif notif( range->second.at(i), tx_id, std::forward<fc::variant>(act_data) );
-              msg.actions.push_back(notif);
+              action_notif notif( range->second.at(i), std::forward<fc::variant>(act_data) );
+              tx.actions.push_back(notif);
               // if(range->second.at(i).name == "transfer" && filter_on.find({ range->second.at(i).authorization[0].actor, 0 }) != filter_on.end() ) {
               //   i += 2;
               // }
             } else {
               variant dummy;
-              action_notif notif( range->second.at(i), tx_id, dummy);
-              msg.actions.push_back(notif);
+              action_notif notif( range->second.at(i), dummy);
+              tx.actions.push_back(notif);
             }
          }
       }
 
-      void send_zmq_message(const  message& msg) {
+      template<typename T>
+      void send_zmq_message(const  T& msg) {
         // ilog("Sending: ${u}",("u",fc::json::to_string(msg)));
         string zao_json = fc::json::to_string(msg);
         zmq::message_t message(zao_json.length());
@@ -197,7 +214,7 @@ namespace eosio {
       void on_accepted_block(const block_state_ptr& block_state) {
         // ilog("on_accepted_block | block_state->block: ${u}", ("u",block_state->block));
         fc::time_point btime = block_state->block->timestamp;
-        if( age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit)) ) {
+        if(age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit))) {
           message msg;
           transaction_id_type tx_id;
           uint32_t block_num = block_state->block->block_num();
@@ -206,21 +223,23 @@ namespace eosio {
           //~ Process transactions from `block_state->block->transactions` because it includes all transactions including deferred ones
           //~ ilog("Looping over all transaction objects in block_state->block->transactions");
           for( const auto& trx : block_state->block->transactions ) {
-            if( trx.trx.contains<transaction_id_type>() ) {
+            if(trx.trx.contains<transaction_id_type>()) {
               //~ For deferred transactions the transaction id is easily accessible
               // ilog("Running: trx.trx.get<transaction_id_type>()");
               // ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<transaction_id_type>()));
               tx_id = trx.trx.get<transaction_id_type>();
-            }
-            else {
+            } else {
               //~ For non-deferred transactions we have to access the txid from within the packed transaction. The `trx` structure and `id()` getter method are defined in `transaction.hpp`
               // ilog("Running: trx.trx.get<packed_transaction>().id()");
               // ilog("===> block_state->block->transactions->trx ID: ${u}", ("u",trx.trx.get<packed_transaction>().id()));
               tx_id = trx.trx.get<packed_transaction>().id();
             }
 
-            if( action_queue.count(tx_id) ) {
-              build_message(msg, tx_id);
+            if(action_queue.count(tx_id)) {
+              transaction tx;
+              tx.tx_id = tx_id;
+              build_message(tx_id, tx);
+              msg.transactions.push_back(tx);
             }
           }
 
@@ -229,11 +248,31 @@ namespace eosio {
           //~ Always make sure we send a new block notification to the watcher plugin for candlestick charting timestamps
           msg.block_num = block_num;
           msg.timestamp = btime;
-          send_zmq_message(msg);
+          msg.msg_type = MSG_TYPE_BLOCK;
+          send_zmq_message<message>(msg);
         }
 
         // Clear the queue. Any actions that were not included since the last block will be detected again the next time on_applied_tx is called for it
         action_queue.clear();
+      }
+
+      void on_irreversible_block(const block_state_ptr& block_state) {
+        // ilog("on_irreversible_block: ${i}", ("i", block_state->block->block_num()));
+        transaction_id_type tx_id;
+        irreversible_block_message msg;
+        msg.block_num = block_state->block->block_num();
+        msg.timestamp = block_state->block->timestamp;
+        msg.msg_type = MSG_TYPE_IRREVERSIBLE_BLOCK;
+
+        for(const auto& trx : block_state->block->transactions) {
+          if(trx.trx.contains<transaction_id_type>()) {
+            tx_id = trx.trx.get<transaction_id_type>();
+          } else {
+            tx_id = trx.trx.get<packed_transaction>().id();
+          }
+          msg.transactions.push_back(tx_id);
+        }
+        send_zmq_message<irreversible_block_message>(msg);
       }
     };
 
@@ -293,6 +332,11 @@ namespace eosio {
                my->on_applied_tx(tt);
             }
          ));
+
+         my->irreversible_block_conn.emplace(chain.irreversible_block.connect(
+            [&](const chain::block_state_ptr& b_state) {
+              my->on_irreversible_block(b_state);
+         }));
       } FC_LOG_AND_RETHROW()
    }
 
@@ -303,9 +347,12 @@ namespace eosio {
    void watcher_plugin::plugin_shutdown() {
       my->applied_tx_conn.reset();
       my->accepted_block_conn.reset();
+      my->irreversible_block_conn.reset();
    }
 
 }
 
-FC_REFLECT(eosio::watcher_plugin_impl::action_notif, (tx_id)(account)(name)(authorization)(action_data))
-FC_REFLECT(eosio::watcher_plugin_impl:: message, (block_num)(timestamp)(actions))
+FC_REFLECT(eosio::watcher_plugin_impl::action_notif, (account)(name)(authorization)(action_data))
+FC_REFLECT(eosio::watcher_plugin_impl::message, (block_num)(timestamp)(transactions)(msg_type))
+FC_REFLECT(eosio::watcher_plugin_impl::irreversible_block_message, (block_num)(timestamp)(transactions)(msg_type))
+FC_REFLECT(eosio::watcher_plugin_impl::transaction, (tx_id)(actions))
