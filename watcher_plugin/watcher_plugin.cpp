@@ -261,7 +261,6 @@ namespace eosio {
               tx.tx_id = tx_id;
               build_message(tx_id, tx);
               msg.transactions.push_back(tx);
-              action_queue.erase(action_queue.find(tx_id)); // Remove an action from the queue after we process it
             }
           }
 
@@ -275,18 +274,6 @@ namespace eosio {
         }
 
         // Clear the queue. Any actions that were not included since the last block *should* be detected again the next time on_applied_tx is called for it
-        if (action_queue.size()) {
-          ilog("WARNING: action_queue still has some unconfirmed actions/tx in it. Printing contents before they're removed from the queue:");
-          for (const auto &p : action_queue) {
-            for (int i = 0; i < p.second.size(); ++i) {
-              std::string data = "";
-              if (!p.second.at(i).data.empty() && p.second.at(i).name != N(processpool)) {
-                data = fc::json::to_string(deserialize_action_data(p.second.at(i)));
-              }
-              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", p.first.str().c_str(), p.second.at(i).name.to_string().c_str(), p.second.at(i).account.to_string().c_str(), p.second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
-            }
-          }
-        }
         action_queue.clear();
       }
 
