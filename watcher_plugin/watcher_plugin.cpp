@@ -168,11 +168,23 @@ namespace eosio {
           }
 
           if (action_queue.count(trace->id)) {
-            ilog("WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
+            ilog("FORK WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
+            ilog("------------------------------------------------------------------");
+            ilog("Previously captured tx action contents:");
+            auto range = action_queue.find(trace->id);
+            for (int i = 0; i < range->second.size(); ++i) {
+              ilog("Action: ${act}", ("act",range->second.at(i).name));
+            }
+            ilog("==================================================================");
+            ilog("New trace contents to be processed for this tx:");
+            for (auto& at : trace->action_traces) {
+               ilog("Action: ${act}", ("act",at.act.name));
+            }
+            ilog("------------------------------------------------------------------");
             action_queue.erase(action_queue.find(trace->id));
           }
 
-          for( auto& at : trace->action_traces ) {
+          for (auto& at : trace->action_traces) {
              on_action_trace(at, trace->id);
           }
         }
