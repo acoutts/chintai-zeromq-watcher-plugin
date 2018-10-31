@@ -169,18 +169,27 @@ namespace eosio {
 
           if (action_queue.count(trace->id)) {
             ilog("FORK WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
-            ilog("------------------------------------------------------------------");
-            ilog("Previously captured tx action contents:");
+            ilog("-------------------------------------------------------------------------------------------------------------------------------------------");
+            ilog("Previously captured tx action contents (to be removed):");
             auto range = action_queue.find(trace->id);
             for (int i = 0; i < range->second.size(); ++i) {
-              ilog("Action: ${act}", ("act",range->second.at(i).name));
+              std::string data = "";
+              if (!range->second.at(i).data.empty() && range->second.at(i).name != N(processpool)) {
+                data = fc::json::to_string(deserialize_action_data(range->second.at(i)));
+              }
+              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), range->second.at(i).name.to_string().c_str(), range->second.at(i).account.to_string().c_str(), range->second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
             }
             ilog("==================================================================");
+            ilog("==================================================================");
             ilog("New trace contents to be processed for this tx:");
-            for (auto& at : trace->action_traces) {
-               ilog("Action: ${act}", ("act",at.act.name));
+            for (auto at : trace->action_traces) {
+              std::string data = "";
+              if (!at.act.data.empty() && at.act.name != N(processpool)) {
+                data = fc::json::to_string(deserialize_action_data(at.act));
+              }
+              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), at.act.name.to_string().c_str(), at.act.account.to_string().c_str(), at.act.authorization[0].actor.to_string().c_str(), data.c_str());
             }
-            ilog("------------------------------------------------------------------");
+            ilog("-------------------------------------------------------------------------------------------------------------------------------------------");
             action_queue.erase(action_queue.find(trace->id));
           }
 
@@ -252,6 +261,7 @@ namespace eosio {
               tx.tx_id = tx_id;
               build_message(tx_id, tx);
               msg.transactions.push_back(tx);
+              action_queue.erase(action_queue.find(tx_id)); // Remove an action from the queue after we process it
             }
           }
 
@@ -264,7 +274,19 @@ namespace eosio {
           send_zmq_message<message>(msg);
         }
 
-        // Clear the queue. Any actions that were not included since the last block will be detected again the next time on_applied_tx is called for it
+        // Clear the queue. Any actions that were not included since the last block *should* be detected again the next time on_applied_tx is called for it
+        if (action_queue.size()) {
+          ilog("WARNING: action_queue still has some unconfirmed actions/tx in it. Printing contents before they're removed from the queue:");
+          for (const auto &p : action_queue) {
+            for (int i = 0; i < p.second.size(); ++i) {
+              std::string data = "";
+              if (!p.second.at(i).data.empty() && p.second.at(i).name != N(processpool)) {
+                data = fc::json::to_string(deserialize_action_data(p.second.at(i)));
+              }
+              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", p.first.str().c_str(), p.second.at(i).name.to_string().c_str(), p.second.at(i).account.to_string().c_str(), p.second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
+            }
+          }
+        }
         action_queue.clear();
       }
 
