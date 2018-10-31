@@ -261,6 +261,7 @@ namespace eosio {
               tx.tx_id = tx_id;
               build_message(tx_id, tx);
               msg.transactions.push_back(tx);
+              action_queue.erase(action_queue.find(tx_id));
             }
           }
 
@@ -274,7 +275,7 @@ namespace eosio {
         }
 
         // Clear the queue. Any actions that were not included since the last block *should* be detected again the next time on_applied_tx is called for it
-        action_queue.clear();
+        // action_queue.clear();
       }
 
       void on_irreversible_block(const block_state_ptr& block_state) {
