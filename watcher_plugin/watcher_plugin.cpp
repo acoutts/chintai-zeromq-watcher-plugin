@@ -98,7 +98,7 @@ namespace eosio {
         sender_socket(context, ZMQ_PUSH)
       {}
 
-      bool filter( const action_trace& act ) {  // Filter on any actions from Chintai and any actions going to Chintai
+      bool filter( const action_trace& act, const transaction_id_type& tx_id) {  // Filter on any actions from Chintai and any actions going to Chintai
         if (
             act.act.name == "extensions" ||
             act.act.name == "undelegatebw" ||
@@ -126,6 +126,11 @@ namespace eosio {
             filter_on.find({ act.act.authorization[0].actor, 0 }) != filter_on.end() ||
             filter_on.find({ act.receipt.receiver, 0 }) != filter_on.end()
           ) {
+            // Ignore invalid calls of chinundel to eosio when we accidentally broadcasted the actions to the wrong account
+            if (act.act.name == "chinundel" && act.receipt.receiver == "eosio") {
+              ilog("[filter] WARNING: chinundel incorrectly called on EOSIO, ignoring action and moving on. TXID: ${txid}", ("txid",tx_id));
+              return false;
+            }
             // ilog("Filtered true on: ${u}", ("u", act.act.name));
             return true;
           } else {
@@ -148,7 +153,7 @@ namespace eosio {
       }
 
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
-        if(filter(act)) {
+        if(filter(act, tx_id)) {
           action_queue[tx_id].push_back(act.act);
           std::string data = "";
           if (!act.act.data.empty() && act.act.name != N(processpool)) {
