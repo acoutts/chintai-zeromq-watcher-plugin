@@ -150,6 +150,11 @@ namespace eosio {
       void on_action_trace( const action_trace& act, const transaction_id_type& tx_id ) {
         if(filter(act)) {
           action_queue[tx_id].push_back(act.act);
+          std::string data = "";
+          if (!act.act.data.empty() && act.act.name != N(processpool)) {
+            data = fc::json::to_string(deserialize_action_data(act.act));
+          }
+          printf("[on_action_trace] [%s] Added trace to queue: %s | To: %s | From: %s | Data: %s\n", tx_id.str().c_str(), act.act.name.to_string().c_str(), act.act.account.to_string().c_str(), act.act.authorization[0].actor.to_string().c_str(), data.c_str());
         }
 
         for(const auto& iline : act.inline_traces) {
@@ -168,28 +173,28 @@ namespace eosio {
           }
 
           if (action_queue.count(trace->id)) {
-            ilog("FORK WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
-            ilog("-------------------------------------------------------------------------------------------------------------------------------------------");
-            ilog("Previously captured tx action contents (to be removed):");
+            ilog("[on_applied_tx] FORK WARNING: tx_id ${i} already exists -- removing existing entry before processing new actions", ("i", trace->id));
+            ilog("[on_applied_tx] -------------------------------------------------------------------------------------------------------------------------------------------");
+            ilog("[on_applied_tx] Previously captured tx action contents (to be removed):");
             auto range = action_queue.find(trace->id);
             for (int i = 0; i < range->second.size(); ++i) {
               std::string data = "";
               if (!range->second.at(i).data.empty() && range->second.at(i).name != N(processpool)) {
                 data = fc::json::to_string(deserialize_action_data(range->second.at(i)));
               }
-              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), range->second.at(i).name.to_string().c_str(), range->second.at(i).account.to_string().c_str(), range->second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
+              printf("[on_applied_tx] [%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), range->second.at(i).name.to_string().c_str(), range->second.at(i).account.to_string().c_str(), range->second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
             }
-            ilog("==================================================================");
-            ilog("==================================================================");
-            ilog("New trace contents to be processed for this tx:");
+            ilog("[on_applied_tx] ==================================================================");
+            ilog("[on_applied_tx] ==================================================================");
+            ilog("[on_applied_tx] New trace contents to be processed for this tx:");
             for (auto at : trace->action_traces) {
               std::string data = "";
               if (!at.act.data.empty() && at.act.name != N(processpool)) {
                 data = fc::json::to_string(deserialize_action_data(at.act));
               }
-              printf("[%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), at.act.name.to_string().c_str(), at.act.account.to_string().c_str(), at.act.authorization[0].actor.to_string().c_str(), data.c_str());
+              printf("[on_applied_tx] [%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), at.act.name.to_string().c_str(), at.act.account.to_string().c_str(), at.act.authorization[0].actor.to_string().c_str(), data.c_str());
             }
-            ilog("-------------------------------------------------------------------------------------------------------------------------------------------");
+            ilog("[on_applied_tx] -------------------------------------------------------------------------------------------------------------------------------------------");
             action_queue.erase(action_queue.find(trace->id));
           }
 
@@ -233,7 +238,6 @@ namespace eosio {
       }
 
       void on_accepted_block(const block_state_ptr& block_state) {
-        // ilog("on_accepted_block | block_state->block: ${u}", ("u",block_state->block));
         fc::time_point btime = block_state->block->timestamp;
         if(age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit))) {
           message msg;
@@ -257,11 +261,14 @@ namespace eosio {
             }
 
             if(action_queue.count(tx_id)) {
+              ilog("[on_accepted_block] block_num: ${u}", ("u",block_state->block->block_num()));
+              ilog("[on_accepted_block] Matched TX in accepted block: ${tx}", ("tx",tx_id));
               transaction tx;
               tx.tx_id = tx_id;
               build_message(tx_id, tx);
               msg.transactions.push_back(tx);
               action_queue.erase(action_queue.find(tx_id));
+              ilog("[on_accepted_block] Action queue size after removing item: ${i}", ("i",action_queue.size()));
             }
           }
 
