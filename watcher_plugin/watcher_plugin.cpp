@@ -114,7 +114,7 @@ namespace eosio {
             act.act.name == "freeze" ||
             act.act.name == "cancelorder" ||
             act.act.name == "cancelorderc" ||
-            act.act.name == "onerror" ||
+            //act.act.name == "onerror" || // ignore because this won't be found in a block
             act.act.name == "processpool" ||
             act.act.name == "transfer" ||
             act.act.name == "sortdeftrx" ||
