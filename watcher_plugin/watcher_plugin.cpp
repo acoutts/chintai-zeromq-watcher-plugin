@@ -88,6 +88,13 @@ namespace eosio {
       fc::optional<boost::signals2::scoped_connection> accepted_block_conn;
       fc::optional<boost::signals2::scoped_connection> applied_tx_conn;
       fc::optional<boost::signals2::scoped_connection> irreversible_block_conn;
+      fc::optional<boost::signals2::scoped_connection> pre_accepted_block_conn;
+      fc::optional<boost::signals2::scoped_connection> accepted_block_header_conn;
+      fc::optional<boost::signals2::scoped_connection> accepted_confirmation_conn;
+      fc::optional<boost::signals2::scoped_connection> accepted_transaction_conn;
+
+
+
       std::set<watcher_plugin_impl::filter_entry>      filter_on;
       int64_t                                          age_limit = default_age_limit;
       action_queue_t                                   action_queue;
@@ -168,6 +175,9 @@ namespace eosio {
       }
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
+        ilog("[on_applied_transaction] trace: ${blocknum}", ("blocknum",trace));
+
+
         if (trace->receipt) {
           if (trace->failed_dtrx_trace) {
             if (action_queue.count(trace->failed_dtrx_trace->id)) {
@@ -243,6 +253,7 @@ namespace eosio {
       }
 
       void on_accepted_block(const block_state_ptr& block_state) {
+        ilog("[on_accepted_block] block_num: ${blocknum}", ("blocknum",block_state->block->block_num()));
         fc::time_point btime = block_state->block->timestamp;
         if(age_limit == -1 || (fc::time_point::now() - btime < fc::seconds(age_limit))) {
           message msg;
@@ -291,7 +302,7 @@ namespace eosio {
       }
 
       void on_irreversible_block(const block_state_ptr& block_state) {
-        // ilog("on_irreversible_block: ${i}", ("i", block_state->block->block_num()));
+        // ilog("[on_irreversible_block] block_num: ${blocknum}", ("blocknum",block_state->block->block_num()));
         transaction_id_type tx_id;
         irreversible_block_message msg;
         msg.block_num = block_state->block->block_num();
@@ -308,6 +319,23 @@ namespace eosio {
         }
         send_zmq_message<irreversible_block_message>(msg);
       }
+
+      void on_pre_accepted_block(const signed_block_ptr& blk) {
+        ilog("[on_pre_accepted_block] blk: ${blocknum}", ("blocknum",blk));
+      }
+
+      void on_accepted_block_header(const block_state_ptr& block_state) {
+        ilog("[on_accepted_block_header] block_num: ${blocknum}", ("blocknum",block_state->block->block_num()));
+      }
+
+      void on_accepted_confirmation(const header_confirmation& conf) {
+        ilog("[on_accepted_confirmation] conf: ${blocknum}", ("blocknum",conf));
+      }
+
+      void on_accepted_transaction(const transaction_metadata_ptr& meta) {
+        ilog("[on_accepted_transaction] meta: ${blocknum}", ("blocknum",meta->trx));
+      }
+
     };
 
    const fc::microseconds watcher_plugin_impl::http_timeout = fc::seconds(10);
@@ -371,6 +399,30 @@ namespace eosio {
             [&](const chain::block_state_ptr& b_state) {
               my->on_irreversible_block(b_state);
          }));
+
+         my->pre_accepted_block_conn.emplace(chain.pre_accepted_block.connect(
+           [&](const signed_block_ptr& blk) {
+             my->on_pre_accepted_block(blk);
+         }));
+
+         my->accepted_block_header_conn.emplace(chain.accepted_block_header.connect(
+           [&](const chain::block_state_ptr& b_state) {
+             my->on_accepted_block_header(b_state);
+         }));
+
+
+
+         my->accepted_confirmation_conn.emplace(chain.accepted_confirmation.connect(
+           [&](const header_confirmation& conf) {
+             my->on_accepted_confirmation(conf);
+         }));
+
+         my->accepted_transaction_conn.emplace(chain.accepted_transaction.connect(
+           [&](const transaction_metadata_ptr& meta) {
+             my->on_accepted_transaction(meta);
+         }));
+
+
       } FC_LOG_AND_RETHROW()
    }
 
@@ -382,6 +434,10 @@ namespace eosio {
       my->applied_tx_conn.reset();
       my->accepted_block_conn.reset();
       my->irreversible_block_conn.reset();
+      my->pre_accepted_block_conn.reset();
+      my->accepted_block_header_conn.reset();
+      my->accepted_confirmation_conn.reset();
+      my->accepted_transaction_conn.reset();
    }
 
 }
