@@ -154,7 +154,7 @@ namespace eosio {
           if (!act.act.data.empty() && act.act.name != N(processpool)) {
             data = fc::json::to_string(deserialize_action_data(act.act));
           }
-          printf("[on_action_trace] [%s] Added trace to queue: %s | To: %s | From: %s | Data: %s\n", tx_id.str().c_str(), act.act.name.to_string().c_str(), act.act.account.to_string().c_str(), act.act.authorization[0].actor.to_string().c_str(), data.c_str());
+          ilog("[on_action_trace] [${txid}] Added trace to queue: ${action} | To: ${to} | From: ${from} | Data: ${data}", ("txid",tx_id.str().c_str())("action",act.act.name.to_string().c_str())("to",act.act.account.to_string().c_str())("from",act.act.authorization[0].actor.to_string().c_str())("data",data.c_str()));
         }
 
         for(const auto& iline : act.inline_traces) {
@@ -182,7 +182,7 @@ namespace eosio {
               if (!range->second.at(i).data.empty() && range->second.at(i).name != N(processpool)) {
                 data = fc::json::to_string(deserialize_action_data(range->second.at(i)));
               }
-              printf("[on_applied_tx] [%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), range->second.at(i).name.to_string().c_str(), range->second.at(i).account.to_string().c_str(), range->second.at(i).authorization[0].actor.to_string().c_str(), data.c_str());
+              ilog("[on_applied_tx] [${txid}] Action: ${action} | To: ${to} | From: ${from} | Data: ${data}", ("txid",trace->id.str().c_str())("action",range->second.at(i).name.to_string().c_str())("to",range->second.at(i).account.to_string().c_str())("from",range->second.at(i).authorization[0].actor.to_string().c_str())("data",data.c_str()));
             }
             ilog("[on_applied_tx] ==================================================================");
             ilog("[on_applied_tx] ==================================================================");
@@ -192,7 +192,7 @@ namespace eosio {
               if (!at.act.data.empty() && at.act.name != N(processpool)) {
                 data = fc::json::to_string(deserialize_action_data(at.act));
               }
-              printf("[on_applied_tx] [%s] Action: %s | To: %s | From: %s | Data: %s\n", trace->id.str().c_str(), at.act.name.to_string().c_str(), at.act.account.to_string().c_str(), at.act.authorization[0].actor.to_string().c_str(), data.c_str());
+              ilog("[on_applied_tx] [${txid}] Action: ${action} | To: ${to} | From: ${from} | Data: ${data}", ("txid",trace->id.str().c_str())("action",at.act.name.to_string().c_str())("to",at.act.account.to_string().c_str())("from",at.act.authorization[0].actor.to_string().c_str())("data",data.c_str()));
             }
             ilog("[on_applied_tx] -------------------------------------------------------------------------------------------------------------------------------------------");
             action_queue.erase(action_queue.find(trace->id));
