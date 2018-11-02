@@ -169,9 +169,14 @@ namespace eosio {
 
       void on_applied_tx(const transaction_trace_ptr& trace) {
         if (trace->receipt) {
+          // Ignore failed deferred tx that may still send an applied_transaction signal
+          if( trace->receipt->status != transaction_receipt_header::executed ) {
+            return;
+          }
+
+          // If we later find that a transaction was failed before it's included in a block, remove its actions from the action queue
           if (trace->failed_dtrx_trace) {
             if (action_queue.count(trace->failed_dtrx_trace->id)) {
-              // If we later find that a transaction was failed before it's included in a block, remove its actions from the action queue
               action_queue.erase(action_queue.find(trace->failed_dtrx_trace->id));
               return;
             }
